@@ -11,63 +11,46 @@
 --color@txtcol:文字色,0xffffff
 --select@align:文字揃え=4,左寄[上]=0,中央[上]=1,右寄[上]=2,左寄[中]=3,中央[中]=4,右寄[中]=5,左寄[下]=6,中央[下]=7,右寄[下]=8
 
-local eid = obj.effect_id or obj.index or 0
-
+-- module & state
 package.path = "./Suzuke.IDgen_Su/?.lua;" .. package.path
 local ID = require("IDgen_Su")
-
+local eid = obj.effect_id or obj.index or 0
 if not _G.__IDGen_Su then _G.__IDGen_Su = {} end
-local state = _G.__IDGen_Su[eid]
-if not state then
-    state = { cuid_counter = 0, last_type = -1, last_seed = -1, last_per_object = false, cached_id = "" }
-    _G.__IDGen_Su[eid] = state
+if not _G.__IDGen_Su[eid] then
+    _G.__IDGen_Su[eid] = { cuid_counter = 0, last_type = -1, last_seed = -1, last_per_object = false, cached_id = "" }
 end
+local state = _G.__IDGen_Su[eid]
 
+-- random via obj.rand1
 local frame = per_frame and obj.frame or 1
-
 local rand = {}
 function rand.float(offset)
-    local s = per_object and (eid + seed * 256 + (offset or 0)) or (-(seed * 256 + (offset or 0)))
+    local s = per_object and (eid + seed * 256 + offset) or (-(seed * 256 + offset))
     return obj.rand1(s, frame)
 end
 function rand.byte(offset)
     return math.floor(rand.float(offset) * 256)
 end
 
-local ctx = {
-    time = obj.time,
-    frame = obj.frame,
-    framerate = obj.framerate,
-    seed = seed,
-    eid = eid,
-    id_type = id_type,
-    state = state,
-}
-
-local need_regenerate = per_frame
-    or state.last_type ~= id_type
-    or state.last_seed ~= seed
-    or state.last_per_object ~= per_object
-
-if need_regenerate then
+-- regeneration check
+if per_frame or state.last_type ~= id_type or state.last_seed ~= seed or state.last_per_object ~= per_object then
+    local ctx = {
+        id_type = id_type, time = obj.time, frame = obj.frame, framerate = obj.framerate,
+        seed = seed, eid = eid, state = state,
+    }
     state.cached_id = ID.generate(rand, ctx)
     state.last_type = id_type
     state.last_seed = seed
     state.last_per_object = per_object
 end
 
--- 描画
+-- display
 obj.setfont(font, size, 0, txtcol, 0x000000)
 local tw, th = obj.load("text.layout", state.cached_id, 0, 0, align)
-obj.w = tw
-obj.h = th
-
+obj.w, obj.h = tw, th
 obj.setoption("drawtarget", "tempbuffer", tw, th)
 obj.clearbuffer("tempbuffer")
-
-obj.setfont(font, size, 0, txtcol, 0x000000)
 obj.load("text", state.cached_id, 0, 0, align)
 obj.draw(0, 0)
-
 obj.setoption("drawtarget", "framebuffer")
 obj.copybuffer("object", "tempbuffer")
