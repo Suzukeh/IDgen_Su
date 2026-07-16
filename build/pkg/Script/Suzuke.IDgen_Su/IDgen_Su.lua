@@ -1,16 +1,46 @@
--- IDgen_Su ID generation module
--- returns {"id_type_name", generate(rand, ctx)}
---   rand:  { byte(offset), float(offset) }
---   ctx:   { time, frame, framerate, seed, eid, state }
+--[[
+IDgen_Su — AviUtl2用ユニークID生成モジュール
 
-local UUID_NAMES = {
-    "UUIDv4", "NanoID", "ULID", "CUID", "UUIDv7", "ShortID", "KSUID", "Snowflake"
+    使い方はファイル末尾のコメントを参照。
+]]
+
+local AND = AND  -- AviUtl2グローバル: ビットAND
+
+local ALPHABETS = {
+    URL64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+    CROCKFORD32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+    BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz",
+    BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
 }
 
-local function gen_uuid(rand, ctx)
-    local b = {}
-    for i = 1, 16 do b[i] = rand.byte(i) end
-    b[7] = AND(b[7], 0x0F) + 0x40
+-- helpers
+
+local function encode_base(num, alphabet, len)
+    local base = #alphabet
+    local r = {}
+    for i = 1, len do
+        r[len - i + 1] = alphabet:sub((num % base) + 1, (num % base) + 1)
+        num = math.floor(num / base)
+    end
+    return table.concat(r)
+end
+
+local function random_chars(rand, alphabet, offset, count)
+    local base = #alphabet
+    local r = {}
+    for i = 1, count do
+        local n = math.floor(rand.float(offset + i) * base) + 1
+        r[i] = alphabet:sub(n, n)
+    end
+    return table.concat(r)
+end
+
+local function pack_uint32_be(bytes, offset)
+    return bytes[offset+1] * 16777216 + bytes[offset+2] * 65536 + bytes[offset+3] * 256 + bytes[offset+4]
+end
+
+local function format_uuid(b, version)
+    b[7] = AND(b[7], 0x0F) + version * 0x10
     b[9] = AND(b[9], 0x3F) + 0x80
     return string.format(
         "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
@@ -19,160 +49,149 @@ local function gen_uuid(rand, ctx)
     )
 end
 
-local function gen_nanoid(rand, ctx)
-    local a = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
-    local r = {}
-    for i = 1, 21 do
-        local n = math.floor(rand.float(100 + i) * 64) + 1
-        r[i] = a:sub(n, n)
-    end
-    return table.concat(r)
+-- timestamp helper: ctx → 経過ミリ秒
+local function ms(ctx)
+    return math.floor(ctx.time * 1000) + math.floor(ctx.frame * 1000 / ctx.framerate)
+end
+local function sec(ctx)
+    return math.floor(ctx.time) + math.floor(ctx.frame / ctx.framerate)
+end
+
+-- generators
+
+local function gen_uuid(rand)
+    local b = {}
+    for i = 1, 16 do b[i] = rand.byte(i) end
+    return format_uuid(b, 4)
+end
+
+local function gen_nanoid(rand)
+    return random_chars(rand, ALPHABETS.URL64, 100, 21)
 end
 
 local function gen_ulid(rand, ctx)
-    local a = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-    local ts = math.floor(ctx.time * 1000) + math.floor(ctx.frame * 1000 / ctx.framerate)
-    ts = ts % 281474976710656
-
-    local ts_chars = {}
-    for i = 1, 10 do
-        ts_chars[11 - i] = a:sub((ts % 32) + 1, (ts % 32) + 1)
-        ts = math.floor(ts / 32)
-    end
-
-    local rand_chars = {}
-    for i = 1, 16 do
-        local n = math.floor(rand.float(200 + i) * 32) + 1
-        rand_chars[i] = a:sub(n, n)
-    end
-    return table.concat(ts_chars) .. table.concat(rand_chars)
+    local a = ALPHABETS.CROCKFORD32
+    return encode_base(ms(ctx) % 281474976710656, a, 10) .. random_chars(rand, a, 200, 16)
 end
 
 local function gen_cuid(rand, ctx)
-    local a = "0123456789abcdefghijklmnopqrstuvwxyz"
-
-    local function enc(num, len)
-        local r = {}
-        for i = 1, len do
-            r[len - i + 1] = a:sub((num % 36) + 1, (num % 36) + 1)
-            num = math.floor(num / 36)
-        end
-        return table.concat(r)
-    end
-
-    local ts = math.floor(ctx.time * 1000) + math.floor(ctx.frame * 1000 / ctx.framerate)
-    local ts_str = enc(ts, 8)
-
+    local a = ALPHABETS.BASE36
+    local ts_str = encode_base(ms(ctx), a, 8)
     ctx.state.cuid_counter = (ctx.state.cuid_counter or 0) + 1
-    local counter_str = enc(ctx.state.cuid_counter, 4)
-
-    local fp = ctx.seed
-    local fp_str = enc(fp, 4)
-
-    local rand_str = {}
-    for i = 1, 8 do
-        local n = math.floor(rand.float(300 + i) * 36) + 1
-        rand_str[i] = a:sub(n, n)
-    end
-    return "c" .. ts_str .. counter_str .. fp_str .. table.concat(rand_str)
+    local ctr_str = encode_base(ctx.state.cuid_counter, a, 4)
+    local fp_str = encode_base(ctx.seed, a, 4)
+    local rand_str = random_chars(rand, a, 300, 8)
+    return "c" .. ts_str .. ctr_str .. fp_str .. rand_str
 end
 
 local function gen_uuid7(rand, ctx)
-    local ts = math.floor(ctx.time * 1000) + math.floor(ctx.frame * 1000 / ctx.framerate)
-    ts = ts % 281474976710656
+    local ts = ms(ctx) % 281474976710656
     local b = {}
     for i = 1, 6 do
         b[7 - i] = ts % 256
         ts = math.floor(ts / 256)
     end
-    for i = 7, 16 do
-        b[i] = rand.byte(1000 + i)
-    end
-    b[7] = AND(b[7], 0x0F) + 0x70
-    b[9] = AND(b[9], 0x3F) + 0x80
-    return string.format(
-        "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-        b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8],
-        b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16]
-    )
+    for i = 7, 16 do b[i] = rand.byte(1000 + i) end
+    return format_uuid(b, 7)
 end
 
-local function gen_shortid(rand, ctx)
-    local a = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
-    local r = {}
-    for i = 1, 11 do
-        local n = math.floor(rand.float(500 + i) * 64) + 1
-        r[i] = a:sub(n, n)
-    end
-    return table.concat(r)
+local function gen_shortid(rand)
+    return random_chars(rand, ALPHABETS.URL64, 500, 11)
 end
 
 local function gen_ksuid(rand, ctx)
     local EPOCH = 1400000000
-    local a = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    local a = ALPHABETS.BASE62
 
-    local bytes = {}
-    local ts = math.floor(ctx.time) + math.floor(ctx.frame / ctx.framerate)
-    ts = ts - EPOCH
+    local ts = sec(ctx) - EPOCH
     if ts < 0 then ts = 0 end
     ts = ts % 4294967296
-    for i = 1, 4 do
-        bytes[5 - i] = ts % 256
-        ts = math.floor(ts / 256)
-    end
-    for i = 1, 16 do
-        bytes[4 + i] = rand.byte(6000 + i)
-    end
+
+    local bytes = {}
+    for i = 1, 4 do bytes[5 - i] = ts % 256; ts = math.floor(ts / 256) end
+    for i = 1, 16 do bytes[4 + i] = rand.byte(6000 + i) end
 
     local parts = {}
-    for w = 1, 5 do
-        local o = (w - 1) * 4
-        parts[w] = bytes[o+1] * 16777216 + bytes[o+2] * 65536 + bytes[o+3] * 256 + bytes[o+4]
-    end
+    for w = 0, 4 do parts[w + 1] = pack_uint32_be(bytes, w * 4) end
 
     local result = {}
-    local bp = 5
-    while bp > 0 do
-        local q = {}
-        local qlen = 0
-        local rem = 0
-        for i = 1, bp do
-            local v = parts[i] + rem * 4294967296
+    while #parts > 0 do
+        local q, r = {}, 0
+        for _, p in ipairs(parts) do
+            local v = p + r * 4294967296
             local d = math.floor(v / 62)
-            rem = v % 62
-            if qlen > 0 or d ~= 0 then
-                qlen = qlen + 1
-                q[qlen] = d
-            end
+            r = v % 62
+            if d ~= 0 or #q > 0 then table.insert(q, d) end
         end
-        table.insert(result, 1, a:sub(rem + 1, rem + 1))
+        table.insert(result, 1, a:sub(r + 1, r + 1))
         parts = q
-        bp = qlen
     end
 
     local s = table.concat(result)
-    while #s < 27 do
-        s = "0" .. s
-    end
+    while #s < 27 do s = "0" .. s end
     return s
 end
 
 local function gen_snowflake(rand, ctx)
     local EPOCH = 1577836800000
-    local ts = math.floor(ctx.time * 1000) + math.floor(ctx.frame * 1000 / ctx.framerate)
-    ts = ts - EPOCH
+    local ts = ms(ctx) - EPOCH
     if ts < 0 then ts = 0 end
     ts = ts % 4398046511104
-    local r = math.floor(rand.float(800) * 1024)
-    return tostring(ts * 1024 + r)
+    return tostring(ts * 1024 + math.floor(rand.float(800) * 1024))
 end
 
-local generators = { gen_uuid, gen_nanoid, gen_ulid, gen_cuid, gen_uuid7, gen_shortid, gen_ksuid, gen_snowflake }
+-- exports
+
+local GENERATORS = {
+    gen_uuid, gen_nanoid, gen_ulid, gen_cuid,
+    gen_uuid7, gen_shortid, gen_ksuid, gen_snowflake,
+}
 
 return {
-    names = UUID_NAMES,
+    names = { "UUIDv4", "NanoID", "ULID", "CUID", "UUIDv7", "ShortID", "KSUID", "Snowflake" },
     generate = function(rand, ctx)
-        local fn = generators[ctx.id_type + 1] or generators[1]
+        local fn = GENERATORS[ctx.id_type + 1] or GENERATORS[1]
         return fn(rand, ctx)
     end,
 }
+
+--[[
+--------------------------------------------------------------------------------
+使用例
+
+  -- rand テーブル（呼び出し側で実装）
+  local rand = {}
+  function rand.float(offset)
+      return obj.rand1(offset)  -- 0.0〜1.0
+  end
+  function rand.byte(offset)
+      return math.floor(rand.float(offset) * 256)
+  end
+
+  -- ctx テーブル
+  local ctx = {
+      id_type   = 0,             -- 0=UUIDv4 … 7=Snowflake
+      time      = obj.time,
+      frame     = obj.frame,
+      framerate = obj.framerate,
+      seed      = 0,
+      eid       = obj.effect_id or 0,
+      state     = {},            -- 永続化するテーブル（CUIDのカウンター保持）
+  }
+
+  local ID = require("Suzuke.IDgen_Su.IDgen_Su")
+
+  -- ID種別一覧: ID.names[n]  例: ID.names[0] == "UUIDv4"
+  -- ID生成: ID.generate(rand, ctx) → 文字列
+
+## 依存
+
+  - AviUtl2 の AND() グローバル関数
+  - Lua 標準ライブラリ: string, math, table
+
+## 注意
+
+  - タイムスタンプは ctx.time/frame/framerate から算出（Unix時間ではない）
+  - Snowflake は Lua の53bit整数精度制限により52bitに短縮
+  - CUID を使う場合は ctx.state をフレーム間で永続化すること（グローバル変数推奨）
+]]
