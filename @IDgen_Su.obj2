@@ -25,15 +25,14 @@ end
 
 local frame = per_frame and obj.frame or 1
 
-local rand = {
-    float = function(offset)
-        local s = per_object and (eid + seed * 256 + (offset or 0)) or (-(seed * 256 + (offset or 0)))
-        return obj.rand1(s, frame)
-    end,
-    byte = function(offset)
-        return math.floor(rand.float(offset) * 256)
-    end,
-}
+local rand = {}
+function rand.float(offset)
+    local s = per_object and (eid + seed * 256 + (offset or 0)) or (-(seed * 256 + (offset or 0)))
+    return obj.rand1(s, frame)
+end
+function rand.byte(offset)
+    return math.floor(rand.float(offset) * 256)
+end
 
 local ctx = {
     time = obj.time,
