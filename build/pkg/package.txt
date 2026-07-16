@@ -1,0 +1,3 @@
+IDgen_Su v1.0.0 by Suzuke
+
+8種類のユニークID(UUIDv4, NanoID, ULID, CUID, UUIDv7, ShortID, KSUID, Snowflake)を生成するカスタムオブジェクトです。
