@@ -1,4 +1,4 @@
-@UUID生成
+@UUID
 --select@id_type:ID種別=0,UUIDv4=0,NanoID=1,ULID=2,CUID=3,UUIDv7=4,ShortID=5,KSUID=6,Snowflake=7
 --track@seed:ｼｰﾄﾞ,0,100000,0,1
 --check@per_frame:毎ﾌﾚｰﾑ更新,false
