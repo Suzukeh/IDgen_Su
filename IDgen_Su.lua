@@ -1,7 +1,82 @@
--- IDgen_Su ID generation module
--- returns {"id_type_name", generate(rand, ctx)}
---   rand:  { byte(offset), float(offset) }
---   ctx:   { time, frame, framerate, seed, eid, state }
+--[[
+IDgen_Su — AviUtl2用ユニークID生成モジュール
+
+## 使い方
+
+    local ID = require("Suzuke.IDgen_Su.IDgen_Su")
+
+    -- シード値なしの簡易版（AviUtl2のobj.rand1を利用）
+    local rand = {
+        float = function(offset)
+            return obj.rand1(offset)
+        end,
+        byte = function(offset)
+            return math.floor(rand.float(offset) * 256)
+        end,
+    }
+    local ctx = {
+        id_type  = 0,        -- 0=UUIDv4, 1=NanoID, …, 7=Snowflake
+        time     = obj.time,
+        frame    = obj.frame,
+        framerate = obj.framerate,
+        seed     = 0,        -- 乱数の種
+        eid      = obj.effect_id or 0,
+        state    = {},       -- CUID用の可変ステート（cuid_counterを保持）
+    }
+    local result = ID.generate(rand, ctx)
+
+## 戻り値テーブル
+
+    {
+      names    = { "UUIDv4", "NanoID", "ULID", … },  -- 種別名の一覧 (0-based)
+      generate = function(rand, ctx) → string           -- ID文字列を生成
+    }
+
+## rand テーブル（呼び出し側が実装）
+
+    rand.float(offset) → 0.0〜1.0 の実数
+    rand.byte(offset)  → 0〜255 の整数
+
+  引数 offset は乱数系列内の位置。同じ種・同じoffsetなら同じ値が返るべき。
+  AviUtl2の obj.rand1(seed, frame) を使うか、LCGを自前実装する。
+
+## ctx テーブル
+
+    .id_type    (number)  ID種別 0〜7
+    .time       (number)  現在の再生時間（秒）
+    .frame      (number)  現在のフレーム番号
+    .framerate  (number)  フレームレート
+    .seed       (number)  乱数の種（0〜100000）
+    .eid        (number)  エフェクトID（obj.effect_id）
+    .state      (table)   永続化する可変テーブル。CUIDのカウンターが保存される。
+
+## ID種別一覧
+
+    ID.names[ctx.id_type] で種別名を取得できる。
+
+    | 0 | UUIDv4   | 36文字 | hex+hyphen、完全ランダム           |
+    | 1 | NanoID   | 21文字 | URL-safe short、ランダム           |
+    | 2 | ULID     | 26文字 | Crockford base32、時系列ソート      |
+    | 3 | CUID     | 25文字 | base36、カウンター+指紋             |
+    | 4 | UUIDv7   | 36文字 | UUID形式で時系列ソート              |
+    | 5 | ShortID  | 11文字 | YouTube風短縮、ランダム             |
+    | 6 | KSUID    | 27文字 | base62、160bit高エントロピー        |
+    | 7 | Snowflake| ~16桁  | 数字のみ、Twitter発コンパクト        |
+
+## 依存
+
+  - AviUtl2 の AND() グローバル関数（ビット演算）
+  - Lua 標準ライブラリ: string, math, table
+
+## 注意事項
+
+  - タイムスタンプは ctx.time, ctx.frame, ctx.framerate から算出。
+    標準のUnix時間ではないため他ツールとの互換性はない。
+  - Snowflake は Lua の53bit整数精度制限により52bitに短縮。
+  - CUID は ctx.state.cuid_counter をフレーム間で永続化する必要がある。
+    ctx.state をグローバル変数（_Gなど）に保存すること。
+]]
+
 
 local UUID_NAMES = {
     "UUIDv4", "NanoID", "ULID", "CUID", "UUIDv7", "ShortID", "KSUID", "Snowflake"
