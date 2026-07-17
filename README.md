@@ -1,11 +1,20 @@
 # IDgen_Su
 
+[![](https://aviutl2-catalog-badge.sevenc7c.workers.dev/api/badge/Suzuke.IDgen_Su)](https://github.com/Neosku/aviutl2-catalog)
+
 8種類のユニークIDを生成するAviUtl2用カスタムオブジェクトです。
 
 スクリプトの一部はAIによって作成されています。問題や改善については私の責任感に従い誠実な対応をするつもりですが、私の能力を超えて対応不能なケースが生じうることをご理解ください。
 
 ## ◆ 導入方法
-`@IDgen_Su.obj2` を `aviutl2/Script/` フォルダに配置してください。
+
+### AviUtl2 カタログからインストール（推奨）
+[AviUtl2 カタログ](https://github.com/Neosku/aviutl2-catalog) から `IDgen_Su` を検索してインストールしてください。
+
+### 手動インストール
+[Releases](https://github.com/Suzukeh/IDgen_Su/releases) から `Suzuke.IDgen_Su.au2pkg.zip` をダウンロードし、AviUtl2 のプレビュー画面にドラッグ&ドロップしてください。
+
+または `@IDgen_Su.obj2` と `IDgen_Su.lua` を `Script/Suzuke.IDgen_Su/` に手動配置してください。
 
 ## ◆ 使い方
 カスタムオブジェクト `IDgen_Su` を追加すると、指定した種別のユニークIDがテキストで表示されます。
