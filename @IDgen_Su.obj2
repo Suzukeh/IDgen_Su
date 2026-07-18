@@ -11,26 +11,30 @@
 --color@txtcol:文字色,0xffffff
 --select@align:文字揃え=4,左寄[上]=0,中央[上]=1,右寄[上]=2,左寄[中]=3,中央[中]=4,右寄[中]=5,左寄[下]=6,中央[下]=7,右寄[下]=8
 
--- module & state
-package.path = "./Suzuke.IDgen_Su/?.lua;" .. package.path
+-- module & state (one-time setup)
+if not _G.__IDgen_Su then
+    _G.__IDgen_Su = {}
+    package.path = "./Suzuke.IDgen_Su/?.lua;" .. package.path
+end
 local ID = require("IDgen_Su")
 local eid = obj.effect_id or obj.index or 0
-if not _G.__IDGen_Su then _G.__IDGen_Su = {} end
-if not _G.__IDGen_Su[eid] then
-    _G.__IDGen_Su[eid] = { cuid_counter = 0, last_type = -1, last_seed = -1, last_per_object = false, cached_id = "" }
+if not _G.__IDgen_Su[eid] then
+    _G.__IDgen_Su[eid] = { cuid_counter = 0, last_type = -1, last_seed = -1, last_per_object = false, cached_id = "" }
 end
-local state = _G.__IDGen_Su[eid]
+local state = _G.__IDgen_Su[eid]
 
--- random via obj.rand1
-local frame = per_frame and obj.frame or 1
-local rand = {}
-function rand.float(offset)
-    local s = per_object and (eid + seed * 256 + offset) or (-(seed * 256 + offset))
-    return obj.rand1(s, frame)
+-- random via obj.rand1 (closures capture frame-local upvalues)
+local frm = per_frame and obj.frame or 1
+local local_seed = seed
+local local_per = per_object
+local rand_float = function(offset)
+    local s = local_per and (eid + local_seed * 256 + offset) or (-(local_seed * 256 + offset))
+    return obj.rand1(s, frm)
 end
-function rand.byte(offset)
-    return math.floor(rand.float(offset) * 256)
+local rand_byte = function(offset)
+    return math.floor(rand_float(offset) * 256)
 end
+local rand = { float = rand_float, byte = rand_byte }
 
 -- regeneration check
 if per_frame or state.last_type ~= id_type or state.last_seed ~= seed or state.last_per_object ~= per_object then
